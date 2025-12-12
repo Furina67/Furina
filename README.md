@@ -3,37 +3,37 @@ Furina is a multifunctional Discord bot built with Python and discord.py, offeri
 
 # Features
 
-# Board Games
+- Board Games
 Engaging, interactive game command.
 
-# Bot Commands
+- Bot Commands
 Help menus, info commands, core bot utilities.
 
-# Fun
+- Fun
 Entertaining, playful commands for users.
 
-# General / Info
+- General / Info
 Useful information tools.
 
-# Giveaway System
+- Giveaway System
 Easy-to-run giveaways with clean UI.
 
-# Moderation Tools
+- Moderation Tools
 Kick, ban, timeout, purge and more.
 
-# Search Tools
+- Search Tools
 Quick, efficient lookup utilities.
 
-# Snipe Commands
+- Snipe Commands
 View deleted messages.
 
-# Vanity Role System
+- Vanity Role System
 Automatically manages vanity-based roles.
 
-# Utility Commands
+- Utility Commands
 Helpful everyday tools for users and admins.
 
-# Welcome System
+- Welcome System
 Custom welcome messages for new members.
 
 # Tech Stack
