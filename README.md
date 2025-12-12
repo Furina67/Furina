@@ -44,7 +44,7 @@ discord.py
 # Setup & Installation
 
 1. Clone the Repository
-git clone https://github.com/your-username/furina.git
+git clone https://github.com/Furina67/furina.git
 cd furina
 
 2. Install Dependencies
