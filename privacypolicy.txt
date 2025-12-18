@@ -1,0 +1,66 @@
+Last updated: December 2025
+
+1. Overview
+
+This Privacy Policy explains how Furina collects, uses, and protects data when used in Discord servers. The Bot operates only within servers where it is explicitly invited and does not function outside of Discord.
+
+2. Data Collected
+
+The Bot may temporarily process the following types of data provided by Discord’s API:
+
+User IDs, Server IDs, Channel IDs (required for core functionality)
+
+Message content (only for server-enabled features such as moderation commands, AFK functionality, counting systems, and optional message-based utilities)
+
+Member data (roles, join/leave state, nickname)
+
+Presence data (custom status text for opt-in status-based role features)
+
+
+The Bot does not access or process direct messages.
+
+3. How Data Is Used
+
+Data is used strictly to provide the Bot’s intended functionality, including:
+
+Executing slash commands and interactions
+
+Managing server configurations and roles
+
+Operating moderation and utility features
+
+Providing interactive games and server tools
+
+
+Data is not used for analytics, profiling, advertising, or machine learning.
+
+4. Data Storage and Retention
+
+Message content is not stored permanently.
+
+Any message-related data is kept only in short-term memory and cleared automatically.
+
+Member and presence data is processed in real time and not retained beyond operational needs.
+
+No data is stored outside of Discord unless explicitly required for configuration (such as server settings).
+
+
+5. Data Sharing
+
+The Bot does not sell, share, or distribute user data to third parties. Data is accessed only by the Bot to provide its services within Discord servers.
+
+6. User Control and Opt-Out
+
+Server administrators can enable or disable features at any time. Users may opt out of certain features (such as presence-based role systems) by server configuration or role permissions.
+
+7. Security
+
+Reasonable measures are taken to protect data processed by the Bot. The Bot follows Discord’s Developer Terms of Service and API policies.
+
+8. Changes to This Policy
+
+This Privacy Policy may be updated as features evolve. Continued use of the Bot after updates indicates acceptance of the revised policy.
+
+9. Contact
+
+For questions or concerns regarding this Privacy Policy, please contact the @twin.67 via discord.
