@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import aiohttp
 import random
+import urllib.parse
 
 
 class Husbando(commands.Cog):
@@ -13,9 +14,7 @@ class Husbando(commands.Cog):
         await self.session.close()
 
     async def _from_nekos_best(self):
-        url = "https://nekos.best/api/v2/husbando"
-
-        async with self.session.get(url) as resp:
+        async with self.session.get("https://nekos.best/api/v2/husbando") as resp:
             if resp.status != 200:
                 return None
 
@@ -28,8 +27,9 @@ class Husbando(commands.Cog):
                 "artist_name": r.get("artist_name"),
             }
 
-    async def _from_waifu_pics(self):
-        url = "https://api.waifu.pics/sfw/waifu"
+    async def _from_picre(self):
+        tags = "1boy,male,solo"
+        url = f"https://api.pic.re/image.json?tags={urllib.parse.quote(tags)}"
 
         async with self.session.get(url) as resp:
             if resp.status != 200:
@@ -38,15 +38,15 @@ class Husbando(commands.Cog):
             data = await resp.json()
 
             return {
-                "url": data["url"],
+                "url": data["file_url"],
                 "anime_name": None,
-                "artist_name": None,
+                "artist_name": data.get("artist"),
             }
 
     async def fetch_husbando(self):
         sources = [
             self._from_nekos_best,
-            self._from_waifu_pics,
+            self._from_picre,
         ]
 
         random.shuffle(sources)
@@ -94,7 +94,6 @@ class Husbando(commands.Cog):
     async def husbando(self, ctx: commands.Context):
         data = await self.fetch_husbando()
         embed = self.build_embed(data, ctx.author)
-
         await ctx.send(embed=embed, view=HusbandoView(ctx, self))
 
 
@@ -114,22 +113,13 @@ class HusbandoView(discord.ui.View):
         return True
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
-    async def next_husbando(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
+    async def next_husbando(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = await self.cog.fetch_husbando()
         embed = self.cog.build_embed(data, self.ctx.author)
-
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Close", style=discord.ButtonStyle.red)
-    async def close(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.message.delete()
 
 
