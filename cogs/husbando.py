@@ -1,84 +1,137 @@
 import discord
 from discord.ext import commands
 import aiohttp
+import random
+
 
 class Husbando(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.session = aiohttp.ClientSession()
+
+    async def cog_unload(self):
+        await self.session.close()
+
+    async def _from_nekos_best(self):
+        url = "https://nekos.best/api/v2/husbando"
+
+        async with self.session.get(url) as resp:
+            if resp.status != 200:
+                return None
+
+            data = await resp.json()
+            r = data["results"][0]
+
+            return {
+                "url": r["url"],
+                "anime_name": r.get("anime_name"),
+                "artist_name": r.get("artist_name"),
+            }
+
+    async def _from_waifu_pics(self):
+        url = "https://api.waifu.pics/sfw/waifu"
+
+        async with self.session.get(url) as resp:
+            if resp.status != 200:
+                return None
+
+            data = await resp.json()
+
+            return {
+                "url": data["url"],
+                "anime_name": None,
+                "artist_name": None,
+            }
 
     async def fetch_husbando(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://nekos.best/api/v2/husbando") as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if "results" in data:
-                        r = data["results"][0]
-                        return {
-                            "url": r["url"],
-                            "anime_name": r.get("anime_name", "Unknown"),
-                            "artist_name": r.get("artist_name", "Unknown")
-                        }
+        sources = [
+            self._from_nekos_best,
+            self._from_waifu_pics,
+        ]
+
+        random.shuffle(sources)
+
+        for source in sources:
+            try:
+                result = await source()
+                if result and result.get("url"):
+                    return result
+            except Exception:
+                continue
 
         return {
-            "url": "https://nekos.best/api/v2/husbando/001.png",
-            "anime_name": "Mystery Husbando",
-            "artist_name": "Unknown"
+            "url": "https://i.imgur.com/8Km9tLL.png",
+            "anime_name": None,
+            "artist_name": None,
         }
 
-    @commands.command(name="husbando")
-    async def husbando(self, ctx):
-        data = await self.fetch_husbando()
+    def build_embed(self, data, author):
+        lines = []
+
+        if data.get("anime_name"):
+            lines.append(f"**Anime/Game:** {data['anime_name']}")
+
+        if data.get("artist_name"):
+            lines.append(f"**Artist:** {data['artist_name']}")
+
+        if data.get("url"):
+            lines.append(f"[Image link]({data['url']})")
+
         embed = discord.Embed(
-            title="💙 Random Husbando",
-            description=(
-                f"🎬 **Anime/Game:** {data['anime_name']}\n"
-                f"🎨 **Artist:** {data['artist_name']}"
-            ),
-            color=discord.Color.blue()
+            title="Random Husbando",
+            description="\n".join(lines) or "No additional information available.",
+            color=discord.Color.blue(),
         )
+
         embed.set_image(url=data["url"])
-        embed.set_footer(text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+        embed.set_footer(
+            text=f"Requested by {author.display_name}",
+            icon_url=author.display_avatar.url,
+        )
+        return embed
+
+    @commands.command(name="husbando")
+    async def husbando(self, ctx: commands.Context):
+        data = await self.fetch_husbando()
+        embed = self.build_embed(data, ctx.author)
+
         await ctx.send(embed=embed, view=HusbandoView(ctx, self))
 
 
 class HusbandoView(discord.ui.View):
-    def __init__(self, ctx, cog):
+    def __init__(self, ctx: commands.Context, cog: Husbando):
         super().__init__(timeout=1200)
         self.ctx = ctx
         self.cog = cog
 
-    async def interaction_check(self, interaction: discord.Interaction):
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user != self.ctx.author:
-            await interaction.response.send_message("You can’t control this.", ephemeral=True)
+            await interaction.response.send_message(
+                "You can’t control this.",
+                ephemeral=True,
+            )
             return False
         return True
 
-    async def update_embed(self, interaction, title):
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.blurple)
+    async def next_husbando(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
         data = await self.cog.fetch_husbando()
-        embed = discord.Embed(
-            title=title,
-            description=(
-                f"🎬 **Anime/Game:** {data['anime_name']}\n"
-                f"🎨 **Artist:** {data['artist_name']}"
-            ),
-            color=discord.Color.blurple()
-        )
-        embed.set_image(url=data["url"])
-        embed.set_footer(text=f"Requested by {self.ctx.author.display_name}", icon_url=self.ctx.author.display_avatar.url)
+        embed = self.cog.build_embed(data, self.ctx.author)
+
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.green)
-    async def refresh(self, interaction, button):
-        await self.update_embed(interaction, "💙 Random Husbando")
-
-    @discord.ui.button(label="Next Husbando", style=discord.ButtonStyle.blurple)
-    async def next_husbando(self, interaction, button):
-        await self.update_embed(interaction, "💙 Next Husbando")
-
     @discord.ui.button(label="Close", style=discord.ButtonStyle.red)
-    async def close(self, interaction, button):
+    async def close(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
         await interaction.message.delete()
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Husbando(bot))
