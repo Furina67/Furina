@@ -56,7 +56,7 @@ TOKEN = "YOUR_BOT_TOKEN"
 bot.run(TOKEN)
 
 4. Start the Bot
-- python bot.py
+- python main.py
 
 # Contributing
 Suggestions and improvements are always welcome.
