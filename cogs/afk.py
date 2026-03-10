@@ -1,74 +1,144 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from datetime import datetime, timezone
-import json
-import os
+import aiosqlite
+import asyncio
 
-AFK_FILE = "afk_data.json"
+DB_PATH = "/home/container/afk.db"
+
+ACTIVATE_IMAGE = "https://ik.imagekit.io/mzxm6xoasi/furina.jpg"
+PING_IMAGE = "https://ik.imagekit.io/jxgzuguk6/image0.png"
+REMOVAL_IMAGE = "https://ik.imagekit.io/mzxm6xoasi/genshin-impact-focalors-demo.jpg"
 
 
 class AFK(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.afk_users = self.load_afk_data()
+        self.db = None
+        self.write_lock = asyncio.Lock()
 
-    def load_afk_data(self):
-        if not os.path.exists(AFK_FILE):
-            return {}
+    async def cog_load(self):
+        self.db = await aiosqlite.connect(DB_PATH)
+        await self.db.execute("PRAGMA journal_mode=WAL;")
+        await self.db.execute("PRAGMA busy_timeout = 5000;")
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS afk (
+                user_id INTEGER PRIMARY KEY,
+                reason TEXT,
+                since TEXT
+            )
+        """)
+        await self.db.commit()
 
-        with open(AFK_FILE, "r") as f:
-            data = json.load(f)
+    async def cog_unload(self):
+        if self.db:
+            await self.db.close()
 
-        for uid, info in data.items():
-            info["since"] = datetime.fromisoformat(info["since"])
+    async def db_read(self, query, params=()):
+        async with self.db.execute(query, params) as cursor:
+            return await cursor.fetchone()
 
-        return data
-
-    def save_afk_data(self):
-        formatted = {
-            str(uid): {
-                "reason": d["reason"],
-                "since": d["since"].isoformat()
-            }
-            for uid, d in self.afk_users.items()
-        }
-        with open(AFK_FILE, "w") as f:
-            json.dump(formatted, f, indent=4)
+    async def db_write(self, query, params=()):
+        async with self.write_lock:
+            await self.db.execute(query, params)
+            await self.db.commit()
 
     def format_duration(self, delta):
         secs = int(delta.total_seconds())
-        if secs < 60:
-            return f"{secs} seconds"
         mins, secs = divmod(secs, 60)
-        if mins < 60:
-            return f"{mins} minutes {secs} seconds"
         hrs, mins = divmod(mins, 60)
         return f"{hrs}h {mins}m {secs}s"
 
     def format_ago(self, delta):
         secs = int(delta.total_seconds())
-        if secs < 60:
-            return f"{secs} seconds ago"
         mins, secs = divmod(secs, 60)
-        if mins < 60:
-            return f"{mins} minutes ago"
         hrs, mins = divmod(mins, 60)
-        return f"{hrs} hours ago"
+        return f"{hrs}h {mins}m {secs}s ago"
 
-    @commands.command(name="afk")
+    @commands.hybrid_command(name="afk", description="Set your AFK status")
+    @app_commands.describe(reason="Reason for being AFK")
     async def afk(self, ctx, *, reason: str = "AFK"):
-        self.afk_users[ctx.author.id] = {
-            "reason": reason,
-            "since": datetime.now(timezone.utc)
-        }
-        self.save_afk_data()
 
-        embed = discord.Embed(
-            title="AFK Activated",
-            description=f"You are now marked as AFK.\nReason: {reason}",
-            color=discord.Color.blurple()
+        existing = await self.db_read(
+            "SELECT reason, since FROM afk WHERE user_id = ?",
+            (ctx.author.id,)
         )
-        await ctx.reply(embed=embed, mention_author=False)
+
+        # If already AFK
+        if existing:
+            since = datetime.fromisoformat(existing[1])
+            duration = self.format_duration(
+                datetime.now(timezone.utc) - since
+            )
+
+            view = discord.ui.LayoutView()
+            container = discord.ui.Container()
+
+            container.add_item(
+                discord.ui.TextDisplay(
+                    f"**You're already AFK!**\n"
+                    f"Reason: {existing[0]}\n"
+                    f"Since: {duration}"
+                )
+            )
+
+            container.add_item(discord.ui.Separator())
+
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(media=PING_IMAGE)
+            container.add_item(gallery)
+
+            view.add_item(container)
+
+            if ctx.interaction:
+                await ctx.interaction.response.send_message(
+                    view=view,
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none()
+                )
+            else:
+                await ctx.reply(
+                    view=view,
+                    allowed_mentions=discord.AllowedMentions.none()
+                )
+            return
+
+        # Not AFK yet â†’ set AFK
+        await self.db_write(
+            "INSERT INTO afk (user_id, reason, since) VALUES (?, ?, ?)",
+            (ctx.author.id, reason, datetime.now(timezone.utc).isoformat())
+        )
+
+        view = discord.ui.LayoutView()
+        container = discord.ui.Container()
+
+        container.add_item(
+            discord.ui.TextDisplay(
+                f"**AFK Activated**\n"
+                f"You are now AFK globally.\n"
+                f"Reason: {reason}"
+            )
+        )
+
+        container.add_item(discord.ui.Separator())
+
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(media=ACTIVATE_IMAGE)
+        container.add_item(gallery)
+
+        view.add_item(container)
+
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(
+                view=view,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+        else:
+            await ctx.reply(
+                view=view,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -79,31 +149,82 @@ class AFK(commands.Cog):
         if ctx.valid:
             return
 
-        if message.author.id in self.afk_users:
-            info = self.afk_users.pop(message.author.id)
-            self.save_afk_data()
+        # If author was AFK
+        row = await self.db_read(
+            "SELECT reason, since FROM afk WHERE user_id = ?",
+            (message.author.id,)
+        )
 
-            delta = datetime.now(timezone.utc) - info["since"]
-            duration = self.format_duration(delta)
-
-            embed = discord.Embed(
-                title="AFK Removed",
-                description=f"Welcome back {message.author.display_name}!\nYou were AFK for {duration}.",
-                color=discord.Color.blue()
+        if row:
+            await self.db_write(
+                "DELETE FROM afk WHERE user_id = ?",
+                (message.author.id,)
             )
-            await message.reply(embed=embed, mention_author=False)
+
+            since = datetime.fromisoformat(row[1])
+            duration = self.format_duration(
+                datetime.now(timezone.utc) - since
+            )
+
+            view = discord.ui.LayoutView()
+            container = discord.ui.Container()
+
+            container.add_item(
+                discord.ui.TextDisplay(
+                    f"**Welcome back {message.author.display_name}!**\n"
+                    f"You were AFK for **{duration}**."
+                )
+            )
+
+            container.add_item(discord.ui.Separator())
+
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(media=REMOVAL_IMAGE)
+            container.add_item(gallery)
+
+            view.add_item(container)
+
+            await message.reply(
+                view=view,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
             return
 
+        # Check mentions
         for mention in message.mentions:
-            if mention.id in self.afk_users:
-                info = self.afk_users[mention.id]
-                delta = datetime.now(timezone.utc) - info["since"]
+            row = await self.db_read(
+                "SELECT reason, since FROM afk WHERE user_id = ?",
+                (mention.id,)
+            )
 
-                embed = discord.Embed(
-                    description=f"{mention.display_name} is AFK — {info['reason']} ({self.format_ago(delta)}).",
-                    color=discord.Color.blue()
+            if row:
+                ago = self.format_ago(
+                    datetime.now(timezone.utc) - datetime.fromisoformat(row[1])
                 )
-                await message.channel.send(embed=embed)
+
+                view = discord.ui.LayoutView()
+                container = discord.ui.Container()
+
+                container.add_item(
+                    discord.ui.TextDisplay(
+                        f"**{mention.display_name} is AFK**\n"
+                        f"Reason: {row[0]}\n"
+                        f"Since: {ago}"
+                    )
+                )
+
+                container.add_item(discord.ui.Separator())
+
+                gallery = discord.ui.MediaGallery()
+                gallery.add_item(media=PING_IMAGE)
+                container.add_item(gallery)
+
+                view.add_item(container)
+
+                await message.channel.send(
+                    view=view,
+                    allowed_mentions=discord.AllowedMentions.none()
+                )
                 break
 
 
