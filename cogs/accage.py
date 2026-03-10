@@ -1,37 +1,85 @@
 import discord
 from discord.ext import commands
 from datetime import datetime
-from dateutil.relativedelta import relativedelta  
+from dateutil.relativedelta import relativedelta
+
+
+def format_duration(delta: relativedelta) -> str:
+    parts = []
+
+    if delta.years:
+        parts.append(f"{delta.years} year{'s' if delta.years != 1 else ''}")
+    if delta.months:
+        parts.append(f"{delta.months} month{'s' if delta.months != 1 else ''}")
+    if delta.days:
+        parts.append(f"{delta.days} day{'s' if delta.days != 1 else ''}")
+    if delta.hours:
+        parts.append(f"{delta.hours} hour{'s' if delta.hours != 1 else ''}")
+    if delta.minutes:
+        parts.append(f"{delta.minutes} minute{'s' if delta.minutes != 1 else ''}")
+    if delta.seconds or not parts:
+        parts.append(f"{delta.seconds} second{'s' if delta.seconds != 1 else ''}")
+
+    return ", ".join(parts)
+
+
+class AccAgeView(discord.ui.LayoutView):
+    def __init__(self, user: discord.User, member: discord.Member | None):
+        super().__init__(timeout=None)
+
+        now = datetime.utcnow()
+
+        created = user.created_at.replace(tzinfo=None)
+        acc_delta = relativedelta(now, created)
+
+        created_text = created.strftime("%d %B %Y â€¢ %H:%M:%S")
+        acc_age = format_duration(acc_delta)
+
+        if member and member.joined_at:
+            joined = member.joined_at.replace(tzinfo=None)
+            join_delta = relativedelta(now, joined)
+            joined_text = joined.strftime("%d %B %Y â€¢ %H:%M:%S")
+            join_age = format_duration(join_delta)
+        else:
+            joined_text = "Not available"
+            join_age = "Not available"
+
+        container = discord.ui.Container()
+
+        container.add_item(
+            discord.ui.Section(
+                discord.ui.TextDisplay(
+                    f"## {user.name}\n"
+                    f"Created: {created_text}\n"
+                    f"Age: {acc_age}\n\n"
+                    f"Joined: {joined_text}\n"
+                    f"In Server For: {join_age}"
+                ),
+                accessory=discord.ui.Thumbnail(user.display_avatar.url)
+            )
+        )
+
+        self.add_item(container)
 
 
 class AccAge(commands.Cog):
-    """Shows the account age of a user."""
-
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="accage")
-    async def accage(self, ctx, member: discord.Member = None):
-        """Display the account creation date and age of a member."""
-        member = member or ctx.author
+    @commands.hybrid_command(
+        name="accage",
+        description="Shows account age and server join age"
+    )
+    async def accage(self, ctx: commands.Context, user: discord.User | None = None):
+        user = user or ctx.author
+        member = ctx.guild.get_member(user.id) if ctx.guild else None
 
-        created = member.created_at.replace(tzinfo=None)
-        now = datetime.utcnow()
-        delta = relativedelta(now, created)
+        view = AccAgeView(user, member)
 
-        embed = discord.Embed(
-            title=f"Account Age — {member}",
-            description=(
-                f"**Created on:** {created.strftime('%d %B %Y at %H:%M:%S UTC')}\n\n"
-                f"**Age:** `{delta.years} years, {delta.months} months, "
-                f"{delta.days} days, {delta.hours} hours, "
-                f"{delta.minutes} minutes, {delta.seconds} seconds`"
-            ),
-            color=discord.Color.blurple()
-        )
-
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await ctx.send(embed=embed)
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(view=view)
+        else:
+            await ctx.send(view=view)
 
 
 async def setup(bot):
