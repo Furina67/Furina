@@ -1,144 +1,148 @@
-import logging
 import discord
 from discord.ext import commands
 import aiohttp
 import asyncio
-import traceback
 
-logger = logging.getLogger("checkvanity")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+
+class CheckVanityView(discord.ui.LayoutView):
+    def __init__(self, author: discord.Member, data: dict, code: str):
+        super().__init__(timeout=None)
+
+        guild = data.get("guild", {})
+        server_name = guild.get("name", "Unknown")
+        server_id = guild.get("id", "N/A")
+        boosts = guild.get("premium_subscription_count", 0)
+        tier = guild.get("premium_tier", 0)
+        verification = guild.get("verification_level", "N/A")
+        nsfw = guild.get("nsfw_level", "N/A")
+        mfa = "Required" if guild.get("mfa_level", 0) else "Not Required"
+
+        member_count = data.get("approximate_member_count", "N/A")
+        online_count = data.get("approximate_presence_count", "N/A")
+
+        features = guild.get("features", [])
+        icon = guild.get("icon")
+        banner = guild.get("banner")
+
+        container = discord.ui.Container()
+
+        container.add_item(
+            discord.ui.Section(
+                discord.ui.TextDisplay(
+                    f"## {server_name}\n"
+                    f"Vanity `{code}` is taken."
+                ),
+                accessory=discord.ui.Thumbnail(
+                    f"https://cdn.discordapp.com/icons/{server_id}/{icon}.png?size=1024"
+                ) if icon else None
+            )
+        )
+
+        container.add_item(discord.ui.Separator())
+
+        container.add_item(
+            discord.ui.TextDisplay(
+                f"### Server\n"
+                f"ID: `{server_id}`\n"
+                f"Boosts: `{boosts}`\n"
+                f"Boost Level: `{tier}`"
+            )
+        )
+
+        container.add_item(discord.ui.Separator())
+
+        container.add_item(
+            discord.ui.TextDisplay(
+                f"### Members\n"
+                f"Total: `{member_count}`\n"
+                f"Online: `{online_count}`"
+            )
+        )
+
+        if features:
+            container.add_item(discord.ui.Separator())
+            feature_text = "\n".join(
+                f.replace("_", " ").title() for f in sorted(features)
+            )
+            container.add_item(
+                discord.ui.TextDisplay(
+                    f"### Features\n{feature_text}"
+                )
+            )
+
+        container.add_item(discord.ui.Separator())
+
+        container.add_item(
+            discord.ui.TextDisplay(
+                f"### Security\n"
+                f"Verification Level: `{verification}`\n"
+                f"NSFW Level: `{nsfw}`\n"
+                f"2FA Requirement: `{mfa}`"
+            )
+        )
+
+        if banner:
+            container.add_item(discord.ui.Separator())
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(
+                media=f"https://cdn.discordapp.com/banners/{server_id}/{banner}?size=1024"
+            )
+            container.add_item(gallery)
+
+        container.add_item(discord.ui.Separator())
+
+        container.add_item(
+            discord.ui.TextDisplay(
+                f"Requested by {author.display_name}"
+            )
+        )
+
+        self.add_item(container)
 
 
 class CheckVanity(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="checkvanity")
-    async def check_vanity(self, ctx, code: str = None):
-        try:
-            if not code:
-                return await ctx.reply("Please provide a vanity code. Example: `.checkvanity xyz`", mention_author=False)
+    @commands.hybrid_command(
+        name="checkvanity",
+        description="Check if a Discord vanity code is taken"
+    )
+    async def check_vanity(self, ctx: commands.Context, code: str = None):
 
-            code = code.strip().lower()
-            url = f"https://discord.com/api/v10/invites/{code}?with_counts=true&with_expiration=true"
-
-            logger.info(f"Checking vanity: {code} -> {url} (requested by {ctx.author})")
-
-            async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.get(url, timeout=10) as resp:
-                        status = resp.status
-                        logger.info(f"HTTP status for {code}: {status}")
-
-                        if status == 404:
-                            return await ctx.reply(
-                                f"Vanity `{code}` is available.",
-                                mention_author=False
-                            )
-
-                        if status != 200:
-                            return await ctx.reply(f"API error: {status}. Try again later.", mention_author=False)
-
-                        data = await resp.json()
-
-                except asyncio.TimeoutError:
-                    return await ctx.reply("Request timed out. Try again.", mention_author=False)
-                except Exception as e:
-                    return await ctx.reply(f"Request failed: {e}", mention_author=False)
-
-            guild = data.get("guild", {}) or {}
-
-            approximate_member_count = data.get("approximate_member_count", "N/A")
-            approximate_presence_count = data.get("approximate_presence_count", "N/A")
-
-            server_name = guild.get("name", "Unknown")
-            server_id = guild.get("id", "N/A")
-            feature_list = guild.get("features", []) or []
-            boost_count = guild.get("premium_subscription_count", "N/A")
-            boost_tier = guild.get("premium_tier", "N/A")
-            banner = guild.get("banner")
-            icon = guild.get("icon")
-
-            pretty_features = [f"- {f.replace('_', ' ').title()}" for f in sorted(feature_list)]
-            feature_text = "\n".join(pretty_features) if pretty_features else "No special features."
-
-            def chunk_text(text, limit=1024):
-                chunks = []
-                current = ""
-                for line in text.splitlines():
-                    if len(current) + len(line) + 1 > limit:
-                        chunks.append(current)
-                        current = ""
-                    current += line + "\n"
-                if current:
-                    chunks.append(current)
-                return chunks
-
-            feature_chunks = chunk_text(feature_text)
-
-            embed = discord.Embed(
-                title=f"{server_name}'s Vanity Information",
-                description=f"The vanity code `{code}` is taken.",
-                color=discord.Color.blue()
+        if not code:
+            return await ctx.send(
+                "Please provide a vanity code. Example: `checkvanity dpy`"
             )
 
-            embed.add_field(
-                name="About",
-                value=(
-                    f"Server Name: {server_name}\n"
-                    f"Server ID: `{server_id}`\n"
-                    f"Boosts: `{boost_count}`\n"
-                    f"Boost Level: `{boost_tier}`"
-                ),
-                inline=False
-            )
+        code = code.strip().lower()
+        url = f"https://discord.com/api/v10/invites/{code}?with_counts=true"
 
-            for i, chunk in enumerate(feature_chunks):
-                embed.add_field(
-                    name="Features" if i == 0 else f"Features (cont. {i+1})",
-                    value=chunk,
-                    inline=False
-                )
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, timeout=10) as resp:
 
-            embed.add_field(
-                name="Extras",
-                value=(
-                    f"Verification: `{guild.get('verification_level', 'N/A')}`\n"
-                    f"NSFW Level: `{guild.get('nsfw_level', 'N/A')}`\n"
-                    f"2FA Requirement: `{'Required' if guild.get('mfa_level', 0) else 'Not Required'}`"
-                ),
-                inline=False
-            )
+                    if resp.status == 404:
+                        return await ctx.send(
+                            f"Vanity `{code}` is available."
+                        )
 
-            embed.add_field(
-                name="Members",
-                value=(
-                    f"Total Members: `{approximate_member_count}`\n"
-                    f"Online Members: `{approximate_presence_count}`"
-                ),
-                inline=False
-            )
+                    if resp.status != 200:
+                        return await ctx.send(
+                            f"API error: {resp.status}. Try again later."
+                        )
 
-            if icon:
-                embed.set_thumbnail(url=f"https://cdn.discordapp.com/icons/{server_id}/{icon}.png?size=1024")
-            if banner:
-                embed.set_image(url=f"https://cdn.discordapp.com/banners/{server_id}/{banner}?size=1024")
+                    data = await resp.json()
 
-            embed.set_footer(
-                text=f"Requested by {ctx.author}",
-                icon_url=ctx.author.display_avatar.url
-            )
+            except asyncio.TimeoutError:
+                return await ctx.send("Request timed out. Try again.")
 
-            await ctx.reply(embed=embed, mention_author=False)
+        view = CheckVanityView(ctx.author, data, code)
 
-        except Exception:
-            logger.error("Unhandled exception in checkvanity:\n" + traceback.format_exc())
-            await ctx.reply("An unexpected error occurred. Check logs for details.", mention_author=False)
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(view=view)
+        else:
+            await ctx.send(view=view)
 
 
 async def setup(bot):
